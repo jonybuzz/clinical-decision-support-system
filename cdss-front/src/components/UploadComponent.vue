@@ -1,17 +1,12 @@
 <template>
-  <div class="login-container">
-    <form @submit.prevent="login">
-      <div class="form-group mb-3">
-        <label for="username">Username</label>
-        <input type="text" class="form-control" id="username" v-model="credentials.username" required>
+  <div>
+    <nav class="navbar navbar-light bg-light">
+      <div class="d-flex justify-content-end w-100"> <!-- Flex container for right alignment -->
+        <button class="btn btn-outline-primary mr-2" type="button"> <!-- Button with margin -->
+          <i class="fas fa-user"></i> {{ username }}
+        </button>
       </div>
-      <div class="form-group mb-3">
-        <label for="password">Password</label>
-        <!-- Added @keyup.enter directive here -->
-        <input type="password" class="form-control" id="password" v-model="credentials.password" required @keyup.enter="login">
-      </div>
-      <button type="submit" class="btn btn-primary mt-3">UPLOAD</button>
-    </form>
+    </nav>
   </div>
 </template>
 
@@ -19,35 +14,25 @@
 import axios from 'axios';
 
 export default {
-  name: 'LoginComponent',
+  name: 'UploadComponent',
   data() {
     return {
-      credentials: {
-        username: '',
-        password: ''
-      }
+      username: ''
     };
   },
   methods: {
-    login() {
-      axios.post(process.env.VUE_APP_BACKEND_URL + '/login', this.credentials)
+    fetchUsername() {
+      axios.get(process.env.VUE_APP_BACKEND_URL + '/user')
         .then(response => {
-          console.log('Login successful:', response);
-          // Handle success (e.g., redirect, display a message)
+          this.username = response.data.username; // Set the fetched username
         })
         .catch(error => {
-          console.error('Login failed:', error);
-          // Handle error (e.g., display an error message)
+          console.error('Error fetching username:', error);
         });
     }
+  },
+  created() {
+    this.fetchUsername(); // Fetch the username when the component is created
   }
 }
 </script>
-
-<style scoped>
-.login-container {
-  max-width: 400px;
-  margin: auto;
-  padding-top: 50px;
-}
-</style>
