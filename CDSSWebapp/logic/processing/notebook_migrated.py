@@ -7,12 +7,17 @@ import pandas as pd
 import numpy as np
 from pycaret.classification import *
 from sklearn.feature_selection import SelectKBest, chi2, f_classif
+from sklearn import metrics as mt
+from sklearn.metrics import confusion_matrix
 
 import config
 
 data_folder = config.TMP_DATA_FOLDER
 models_folder = config.TMP_DATA_FOLDER + '/models'
 tuned_models_folder = config.TMP_DATA_FOLDER + '/tuned_models'
+
+# TODO JONA: Pasar al principio o a un archivo aparte (para validar variables) el análisis exploratorio.
+#  Así se va a poder mostrar los gráficos por frontend.
 
 
 # BLOQUE 4
@@ -159,7 +164,7 @@ def calculate_specificity(y, y_pred):
 
 
 # BLOQUE 5
-datasets = {'original': get_dataset(username="admin", filename="survey.csv")}
+datasets = {'original': get_dataset(username="admin", filename="survey.csv")}  # reemplazar por el archivo cargado
 
 # BLOQUE 6
 categoricals = []
@@ -472,6 +477,8 @@ style.format(
     lambda cell: cell.get('dataset_id') + ' (' + str(cell.get('train_size')) + '): ' + str(cell.get('value')) + (
         '*' if cell.get('tuned') else ''))
 style.format_index(str.upper)
+
+# MOSTRAR ESTE CUADRO EN EL FRONTEND
 display(style.apply(lambda row: ['background: yellow' if cell.get('value') == (
     row.map(lambda cell: cell.get('value')).max() if 'TT (Sec)' != row.name else row.map(
         lambda cell: cell.get('value')).min()) else '' for cell in row]))
@@ -506,3 +513,145 @@ display(best_train_sizes)
 display('Tuned metrics: ' + str(total_tuned_metrics) + '/' + str(total_metrics) + ', better: ' + str(
     total_tuned_metrics_better))
 display(sorted(model_metrics.items(), key=lambda x: x[1]))
+
+# BLOQUE 17
+# Se eligió un modelo específico (onehot_min_max_scaled_reduced_chi2) para seguir analizando.
+# Esto se debe poder ver al hacer clic sobre una línea de la tabla del bloque 16.
+
+dataset_id = 'onehot_min_max_scaled_reduced_chi2'
+train_size = 0.7
+train_size_string = str(train_size)
+results = {}
+
+for model_id in metrics[dataset_id][train_size_string]:
+    if model_id != 'dummy':
+        model_title = model_id.upper()
+
+        results[model_title] = {}
+
+        for metric_name in metrics[dataset_id][train_size_string][model_id]:
+            value = tuned_metrics[dataset_id][train_size_string][model_id][metric_name]
+
+            if value == 0:
+                callback = None
+
+                if metric_name == 'AUC':
+                    callback = mt.roc_auc_score
+                elif metric_name == 'Recall':
+                    callback = mt.recall_score
+                elif metric_name == 'Prec.':
+                    callback = mt.precision_score
+                elif metric_name == 'F1':
+                    callback = mt.f1_score
+                elif metric_name == 'Kappa':
+                    callback = mt.cohen_kappa_score
+                elif metric_name == 'MCC':
+                    callback = mt.matthews_corrcoef
+
+                if callback:
+                    setup_dataset(dataset_id, train_size)
+                    tuned_model = tuned_models[dataset_id][train_size_string][model_id]
+                    dataset = datasets[dataset_id]
+                    predicted = predict_model(tuned_model, datasets[dataset_id])
+                    value = mt.roc_auc_score(dataset['depression_diagnosis'], predicted['prediction_label'])
+                    tuned_metrics[dataset_id][train_size_string][model_id][metric_name] = value
+
+            results[model_title][metric_name] = round(value, 2)
+
+results_df = pd.DataFrame(results).transpose().sort_values(['AUC', 'F1'], ascending=False)
+
+style = results_df.style
+
+style.format_index(str.upper)
+display(style.apply(lambda row: ['background: yellow' if cell == (
+    row.map(lambda cell: cell).max() if 'TT (Sec)' != row.name else row.map(lambda cell: cell).min()) else '' for cell
+                                 in row]))
+
+
+# BLOQUE 18 AUXILIAR
+def chart(dataset_id, model_id, plot):
+    train_size = 0.8
+
+    setup_dataset(dataset_id, train_size)
+
+    plot_model(models[dataset_id][str(train_size)][model_id], plot)
+
+
+# chart( 'onehot', 'xgboost', 'auc' )
+# chart( 'onehot_reduced_custom_0.4', 'xgboost', 'auc' )
+# chart( 'onehot_standard_scaled_reduced_f_classif', 'xgboost', 'auc' )
+# chart( 'onehot_min_max_scaled_reduced_chi2', 'xgboost', 'auc' )
+# chart( 'onehot_min_max_scaled_reduced_chi2', 'xgboost', 'feature_all' )
+display(datasets['onehot_min_max_scaled_reduced_chi2'])
+
+# BLOQUE 19 AUXILIAR
+for dataset_id in datasets:
+    print(dataset_id + ": ", end="")
+
+    for column in datasets[dataset_id].columns:
+        print(column + ", ", end="")
+
+    print("")
+    print("")
+
+# BLOQUE 20
+# Para un dataset específico, se hace el predict_model y la confusion Matrix,
+# también haciendo clic en la tabla del bloque 16.
+
+# print(metrics['onehot_min_max_scaled_reduced_chi2']['0.8']['ridge'])
+# print(datasets['onehot_min_max_scaled_reduced_chi2'])
+
+dataset = datasets['onehot']
+
+setup_dataset('onehot', 0.7)
+model = models['onehot']['0.7']['lda']
+
+# model = model = create_model(
+#    'xgboost'
+# )
+
+predict_model(model, dataset)
+
+tuned_model = tuned_models['onehot']['0.7']['lda']
+
+predicted = predict_model(tuned_model, dataset)
+
+confusion_matrix(dataset['depression_diagnosis'], predicted['prediction_label'])
+
+# BLOQUE 21
+
+import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+
+fig, _ = plt.subplots(nrows=1, figsize=(10, 10))
+ax = plt.subplot(1, 1, 1)
+ax.grid(False)
+
+cm = confusion_matrix(dataset['depression_diagnosis'], predicted['prediction_label'])
+
+disp = ConfusionMatrixDisplay(cm, display_labels=['No', 'Yes'])
+
+disp.plot(ax=ax)
+
+# BLOQUE 22
+
+dataset_id = 'onehot_min_max_scaled_reduced_chi2'
+train_size = 0.7
+model_id = 'lda'
+
+train_size_string = str( train_size )
+dataset = validation_datasets[ dataset_id ]
+
+setup_dataset( dataset_id, train_size )
+
+tuned_model = tuned_models[ dataset_id ][ train_size_string ][ model_id ]
+
+predicted = predict_model( tuned_model, dataset )
+
+# BLOQUE 23
+# Esto es parte del análisis exploratorio del inicio, para visualizar.
+
+import seaborn as sns
+
+#datasets['original']
+sns.heatmap(datasets['original'].drop(['id', 'gender', 'who_bmi', 'depression_severity', 'anxiety_severity'], axis=1).corr())
